@@ -1,0 +1,74 @@
+#!/usr/bin/env perl
+# $Id$
+
+# Step 2.
+
+# Given dependencies.yml and modules.yml, associate distribution names
+# with key module names, and save that association as distros.yml.
+
+use warnings;
+use strict;
+use YAML;
+use CPANPLUS::Backend;
+
+$|=1;
+
+print "Loading interemdiate dependencies.yml and modules.yml...\n";
+my $tree = YAML::LoadFile("dependencies.yml");
+my $modules = YAML::LoadFile("modules.yml");
+
+print "Creating backend...\n";
+my $cpan = CPANPLUS::Backend->new();
+
+print(
+	"Associating ", scalar(keys %$modules), " module names with distros...\n"
+);
+
+my %dists;
+
+while (
+	my @modules = (
+		sort {
+			(scalar(() = $a =~ /(::)/g) <=> scalar(() = $b =~ /(::)/g)) ||
+			($a cmp $b)
+		}
+		keys %$modules
+	)
+) {
+	my $module = shift @modules;
+
+	my @s = $cpan->search( type => "module", allow => [ $module ] );
+	foreach my $dist (@s) {
+		my $pkg = $dist->package;
+		$pkg =~ s/\.tar\.gz$//;
+		my $full_package = $pkg;
+
+		my $version;
+		if ($pkg =~ s/-([\d_.]+)$//) {
+			$version = $1;
+		}
+		else {
+			$version = $dist->version;
+		}
+
+		my @contents = $dist->contains();
+		foreach my $content (@contents) {
+			my $content_module = $content->module;
+			$dists{$pkg}{$content_module} = 1;
+			delete $modules->{$content_module};
+		}
+
+		$dists{$pkg}{_fullpkg_} = $full_package;
+		$dists{$pkg}{_version_} = $version;
+		$dists{$pkg}{$module} = 1;
+		delete $modules->{$module};
+
+		print(
+			"  $module -- $pkg -- ", scalar(@contents), " module(s) -- ",
+			scalar(keys %$modules), " left...\n"
+		);
+	}
+}
+
+print "Dumping intermediate files...\n";
+YAML::DumpFile("distros.yml", \%dists);

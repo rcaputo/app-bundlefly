@@ -1,0 +1,64 @@
+#!/usr/bin/env perl
+# $Id$
+
+# Step 1.
+
+# Given an autobundle snapshot, generate intermediate files for
+# build-ab.  This is a separate step because it tends to take
+# significant time, and build-ab may be run multiple times.
+
+# Input is a Snapshot file from CPAN(PLUS).
+# Output are: dependencies.yml and modules.yml.
+
+use warnings;
+use strict;
+use CPAN::Dependency;
+use YAML;
+
+my $autobundle = shift;
+die "$0: needs an autobundle snapshot filename" unless defined $autobundle;
+
+$| = 1;
+my $in_contents = 0;
+
+my $cpandep = CPAN::Dependency->new(
+	verbose => 1,
+	color => 1,
+);
+
+### Gather information about each module in the snapshot.
+
+my %modules;
+
+{
+	print "Gathering module versions...\n";
+	open(my $ab, "<", $autobundle) or die "open $autobundle: $!";
+	while (<$ab>) {
+		$in_contents++, next if /^=head1\s+CONTENTS/;
+		next unless $in_contents;
+		last if /^=/;
+		next unless /^(\S+)\s+(\S+)/;
+		my ($module, $version) = ($1, $2);
+		$modules{$module} = { version => $version };
+	}
+}
+
+### Gather dependency information.
+
+print "Gathering module dependencies...\n";
+foreach my $module (sort keys %modules) {
+	$cpandep->process($module);
+}
+
+$cpandep->run();
+$cpandep->calculate_score();
+
+### Dump intermediates.
+
+unlink "dependencies.yml", "modules.yml", "search.yml";
+
+print "Dumping dependencies.yml...\n";
+$cpandep->save_deps_tree( file => "dependencies.yml" );
+
+print "Dumping modules.yml...\n";
+YAML::DumpFile("modules.yml", \%modules);

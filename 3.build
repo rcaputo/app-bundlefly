@@ -1,0 +1,145 @@
+#!/usr/bin/env perl
+# $Id$
+
+# Step 3.
+
+# Build distributions in least-questions-asked order.
+
+use warnings;
+use strict;
+
+use Module::CoreList;
+use CPANPLUS::Backend;
+use YAML;
+
+open LOG, ">", "build.log" or die $!;
+
+print "Creating backend...\n";
+my $cpan = CPANPLUS::Backend->new();
+
+print "Loading intermediate files...\n";
+my $tree = YAML::LoadFile("dependencies.yml");
+my $distros = YAML::LoadFile("distros.yml");
+my $modules = YAML::LoadFile("modules.yml");
+
+print "Running...\n";
+while (my @keys = keys %$tree) {
+	my $installed_this_pass = 0;
+
+	# Scan the tree.  Install stuff with no dependencies.
+
+	foreach my $dist (@keys) {
+		next unless exists $tree->{$dist};
+		next if keys %{$tree->{$dist}{prereqs}};
+		install_dist($tree, $dist);
+		$installed_this_pass++;
+	}
+
+	# Nothing installed this pass?  Go ahead and do everything else.
+
+	unless ($installed_this_pass) {
+		foreach my $dist (@keys) {
+			next unless exists $tree->{$dist};
+			install_dist($tree, $dist);
+		}
+	}
+}
+
+exit;
+
+sub install_dist {
+	my ($tree, $dist) = @_;
+
+	# Find the canonical distro name for the distribution.
+
+	unless (exists $distros->{$dist}) {
+		print LOG "FAIL: $dist (no distros.yml record)\n";
+		my @users = gather_users($tree, $dist);
+		foreach my $user (@users) {
+			print LOG "SKIP: $user (depends on $dist)\n";
+			remove_dist($tree, $user);
+		}
+		remove_dist($tree, $dist);
+		return;
+	}
+
+	my $canonical = $distros->{$dist}{_fullpkg_};
+	my @modules = grep /^[^_]/, sort keys %{$distros->{$dist}};
+	my $rep_module = $modules[0];
+
+	print "----- Installing $canonical (via $rep_module) ...\n";
+
+	# Check whether the distribution's modules are already installed.
+
+	if (
+		system(
+			$^X, '-wle',
+			qq(close STDERR; ) .
+			qq(eval "use $rep_module"; ) .
+			qq(exit 1 if \$@; ) .
+			qq(exit 0;)
+		) == 0
+	) {
+		print LOG "    : $canonical ($rep_module already installed)\n";
+		remove_dist($tree, $dist);
+		return;
+	}
+
+	# Attempt the install.
+
+	my $cm = $cpan->parse_module(module => $canonical);
+	if (defined $cm) {
+		$cm->install;
+		my $status = $cm->status;
+		if ($status->installed) {
+			remove_dist($tree, $dist);
+			print LOG "pass: $dist (installed $canonical)\n";
+			return;
+		}
+		else {
+			print LOG "FAIL: $dist ($canonical install failed)\n";
+		}
+	}
+	else {
+		print LOG "FAIL: $dist (could not parse $canonical)\n";
+	}
+
+	# Didn't install...
+
+	my @users = gather_users($tree, $dist);
+	foreach my $user (@users) {
+		print LOG "SKIP: $user (depends on $dist)\n";
+		remove_dist($tree, $user);
+	}
+	remove_dist($tree, $dist);
+}
+
+# Remove a distribution from a dependency tree.
+# 1. Remove the dist from every dist that uses it.
+# 2. Remove the dist itself.
+
+sub remove_dist {
+	my ($tree, $dist) = @_;
+	foreach my $used_by (keys %{$tree->{$dist}{used_by}}) {
+		delete $tree->{$used_by}{prereqs}{$dist};
+	}
+	delete $tree->{$dist};
+}
+
+# Gather a sorted list of unique dists that use a particular dist,
+# either directly or indirectly.
+
+sub gather_users {
+	my ($tree, $dist) = @_;
+	my %users;
+	my @user_queue = keys %{$tree->{$dist}{used_by}};
+
+	while (@user_queue) {
+		my $next_user = shift @user_queue;
+		next if exists $users{$next_user};
+		push @user_queue, keys %{$tree->{$next_user}{used_by}};
+		$users{$next_user} = 1;
+	}
+
+	return sort keys %users;
+}
