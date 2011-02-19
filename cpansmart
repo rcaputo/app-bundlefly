@@ -1,0 +1,10 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use Common qw( initialize_cpandb analyze_modules install_graph );
+
+initialize_cpandb();
+my $graph = analyze_modules(@ARGV);
+install_graph($graph);

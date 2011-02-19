@@ -1,0 +1,24 @@
+#!/usr/bin/env perl
+
+use warnings;
+use strict;
+
+use CombinedGraph;
+use Common qw( initialize_cpandb analyze_modules install_graph );
+
+initialize_cpandb();
+
+my @modules;
+
+my $in_contents = 0;
+while (<>) {
+	$in_contents = 1, next if /^=head1\s*CONTENTS/;
+	$in_contents = 0, next if /^=/;
+	next unless $in_contents;
+	next if /^\s*$/;
+
+	push @modules, $1 if /^(\S+)/;
+}
+
+my $graph = analyze_modules(@modules);
+install_graph($graph);
