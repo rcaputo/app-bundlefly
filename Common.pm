@@ -57,7 +57,7 @@ sub install_graph {
 	my $graph = shift;
 
 	while (scalar $graph->vertices()) {
-		foreach my $distro ($graph->successorless_vertices()) {
+		DISTRO: foreach my $distro ($graph->successorless_vertices()) {
 
 			# Sort by length.  Most of the time the module with the shortest
 			# name is the distribution's primary module.
@@ -69,6 +69,15 @@ sub install_graph {
 
 			my $module = $successorless_modules[0]->module;
 
+			my $location = `perldoc -l $module 2> /dev/null`;
+			if (defined $location and length $location) {
+				chomp $location;
+				if (-f $location) {
+					print "Module $module already installed.\n";
+					next DISTRO;
+				}
+			}
+
 			print "Installing $module ...\n";
 
 			if (system("cpan", $module)) {
@@ -77,7 +86,8 @@ sub install_graph {
 					"***** Installation of $distro failed. Stopping.\n",
 				);
 			}
-
+		}
+		continue {
 			$graph->delete_vertex($distro);
 		}
 	}

@@ -1,0 +1,66 @@
+--- WTF?!
+
+I'm dissatisfied with the way CPAN tools install modules, especially
+when they install several modules at once.
+
+Modules in autobundle snapshots are installed alphabetically.
+Dependencies are prepended as needed, and then they are installed
+again later when they appear in the alphabet.
+
+Distributions with a lot of dependencies tend to have the same issue
+on a smaller scale.  Common dependencies such as Test::More may be
+prepended and installed multiple times.
+
+Yes, confirmations can be made automatic.
+
+Yes, automatic confirmations suck less.
+
+But redundantly installing modules, perhaps many times, still sucks.
+
+--- So What?
+
+Perlbrew lowers the effort to install new versions of Perl.  This is
+awesome, and it's all fun and games, until one realizes that each new
+Perl instance is missing all those necessary modules.
+
+Autobundle snapshots reduce the effort needed to install a suite of
+modules into a new Perl instance.  Create an autobundle snapshot from
+one Perl instance, and install them into another.
+
+These tools reduce the bletcherous redundancy inherent in autobundle
+installs.  The process is greatly improved.
+
+--- What You Get
+
+This project includes two utilities to stop the sucking altogether.
+
+"smartcpan" installs one or more modules and their dependencies so
+that the dependencies come before the dependants.  This minimizes
+(often eliminates) "prepend them to the queue" prompts and redundant
+installations.
+
+"smartbundle" does the same for all the modules in an autobundle
+snapshot.
+
+--- How It Works
+
+CPANDB lets us quickly find the distributions for each module to
+install.
+
+It uses Graph::Directed to build dependency graphs for each module.
+We subvert CPANDB to build a combined dependency graph for all
+requested modules.
+
+The graph is iterated through from successorless vertices
+(distributions) up to the requested distributions.  Successorless
+vertices are removed from the graph after each iteration.  This
+continues until the entire graph has been installed and deleted.
+
+The graph is based on distributions, but CPAN tools install modules.
+CPANDB is used again to install a module for each distribution.
+
+--- Troublesome
+
+Log::Log4perl installs fine, but cpan doesn't seem to see it.  Every
+time smartbundle is run, it installs Log::Log4perl again.  So much for
+eliminating redundancy, eh?
